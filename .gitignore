@@ -1,0 +1,11 @@
+node_modules/
+.env
+.DS_Store
+npm-debug.log*
+
+# Private production data. Never commit youth training videos or user data.
+data/
+storage/
+
+# Local generated files
+*.log

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>U9 Videothek</title>
+    <link rel="stylesheet" href="/styles.css?v=20260611-7">
+  </head>
+  <body>
+    <main id="loginView" class="login-shell" hidden>
+      <section class="login-panel">
+        <div>
+          <p class="eyebrow">Privater Bereich</p>
+          <h1>U9 Videothek</h1>
+          <p class="muted">Videos sind erst nach Anmeldung sichtbar.</p>
+        </div>
+        <form id="loginForm" class="stack">
+          <label>
+            E-Mail
+            <input name="email" type="email" value="trainer@u9.local" autocomplete="email" required>
+          </label>
+          <label>
+            Passwort
+            <input name="password" type="password" value="training" autocomplete="current-password" required>
+          </label>
+          <button type="submit">Anmelden</button>
+          <p id="loginError" class="error" role="alert"></p>
+        </form>
+        <p class="demo-note">Demo-Konten: admin@u9.local, trainer@u9.local, eltern@u9.local / Passwort: training</p>
+      </section>
+    </main>
+
+    <main id="appView" hidden>
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">U9</span>
+          <span>Videothek</span>
+        </div>
+        <form id="searchForm" class="search">
+          <input id="searchInput" type="search" placeholder="Training, Kategorie oder Beschreibung suchen" aria-label="Videos suchen">
+          <button type="submit" aria-label="Suchen">Suchen</button>
+        </form>
+        <div class="user-chip">
+          <span id="userName"></span>
+          <button id="logoutButton" type="button">Abmelden</button>
+        </div>
+      </header>
+
+      <section class="layout">
+        <aside class="sidebar">
+          <button class="category active" data-category="">Alle Videos</button>
+          <div id="categoryList"></div>
+        </aside>
+
+        <section class="content">
+          <section class="library-head">
+            <div>
+              <h2>Videothek</h2>
+              <p id="resultSummary" class="muted"></p>
+            </div>
+            <button id="toggleUploadButton" type="button" hidden>Upload</button>
+          </section>
+          <section id="videoGrid" class="video-grid"></section>
+          <p id="emptyState" class="empty" hidden>Noch keine Videos vorhanden.</p>
+
+          <section id="uploadSection" class="upload-panel" hidden>
+            <div>
+              <h2>Video hochladen</h2>
+              <p class="muted">Uploads sind standardmaessig nur fuer Trainer sichtbar.</p>
+            </div>
+            <form id="uploadForm" class="upload-grid">
+              <label>
+                Titel
+                <input name="title" required maxlength="120" placeholder="z. B. Passspiel im Quadrat">
+              </label>
+              <label>
+                Kategorie
+                <select name="category" id="uploadCategory"></select>
+              </label>
+              <label class="full">
+                Beschreibung
+                <textarea name="description" rows="3" placeholder="Kurze Notizen zum Trainingsinhalt"></textarea>
+              </label>
+              <label>
+                Videodatei
+                <input name="video" id="videoFile" type="file" accept="video/*" required>
+              </label>
+              <label class="check">
+                <input name="allowParents" type="checkbox" value="true">
+                Fuer Eltern freigeben
+              </label>
+              <input name="durationSeconds" id="durationSeconds" type="hidden">
+              <input name="thumbnail" id="thumbnailData" type="hidden">
+              <button type="submit">Upload starten</button>
+              <p id="uploadStatus" class="muted"></p>
+            </form>
+          </section>
+
+          <section id="adminSection" class="admin-panel" hidden>
+            <div>
+              <h2>Benutzer</h2>
+              <p class="muted">Nur Admins koennen Benutzer anlegen und Rollen vergeben.</p>
+            </div>
+            <form id="userForm" class="user-grid">
+              <label>
+                Name
+                <input name="name" required maxlength="120" placeholder="Name">
+              </label>
+              <label>
+                E-Mail
+                <input name="email" type="email" required placeholder="name@example.de">
+              </label>
+              <label>
+                Rolle
+                <select name="role" required>
+                  <option value="parent">Eltern</option>
+                  <option value="trainer">Trainer</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </label>
+              <label>
+                Start-Passwort
+                <input name="password" type="password" required minlength="6" placeholder="Mindestens 6 Zeichen">
+              </label>
+              <button type="submit">Benutzer anlegen</button>
+              <p id="userStatus" class="muted"></p>
+            </form>
+            <div id="userList" class="user-list"></div>
+          </section>
+
+        </section>
+      </section>
+
+      <dialog id="playerDialog">
+        <div class="player-head">
+          <div>
+            <h2 id="playerTitle"></h2>
+            <p id="playerMeta" class="muted"></p>
+          </div>
+          <button id="closePlayer" type="button" aria-label="Schliessen">Schliessen</button>
+        </div>
+        <video id="player" controls preload="metadata"></video>
+        <p id="playerDescription"></p>
+      </dialog>
+
+      <dialog id="editDialog">
+        <form id="editForm" class="edit-form">
+          <div class="player-head">
+            <div>
+              <h2>Video bearbeiten</h2>
+              <p class="muted">Titel, Beschreibung, Kategorie und Freigabe anpassen.</p>
+            </div>
+            <button id="closeEdit" type="button" aria-label="Schliessen">Schliessen</button>
+          </div>
+          <input name="id" type="hidden">
+          <label>
+            Titel
+            <input name="title" required maxlength="120">
+          </label>
+          <label>
+            Kategorie
+            <select name="category" id="editCategory"></select>
+          </label>
+          <label>
+            Beschreibung
+            <textarea name="description" rows="5"></textarea>
+          </label>
+          <label class="check">
+            <input name="allowParents" type="checkbox" value="true">
+            Fuer Eltern freigeben
+          </label>
+          <div class="dialog-actions">
+            <button type="submit">Speichern</button>
+            <p id="editStatus" class="muted"></p>
+          </div>
+        </form>
+      </dialog>
+    </main>
+
+    <script src="/app.js?v=20260611-9" type="module"></script>
+  </body>
+</html>
