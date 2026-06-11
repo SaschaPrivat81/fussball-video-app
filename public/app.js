@@ -4,12 +4,14 @@ const state = {
   videos: [],
   users: [],
   activeCategory: "",
-  search: ""
+  search: "",
+  visibleLimit: 12
 };
 
 const $ = (selector) => document.querySelector(selector);
 const tokenKey = "u9SessionToken";
 const thumbnailWidth = 480;
+const initialVideoLimit = 12;
 
 const loginView = $("#loginView");
 const appView = $("#appView");
@@ -27,6 +29,9 @@ const editForm = $("#editForm");
 const editCategory = $("#editCategory");
 const editStatus = $("#editStatus");
 const toggleUploadButton = $("#toggleUploadButton");
+const optimizeThumbnailsButton = $("#optimizeThumbnailsButton");
+const loadMoreButton = $("#loadMoreButton");
+const libraryStatus = $("#libraryStatus");
 
 function secondsToTime(total) {
   const value = Number(total || 0);
@@ -73,6 +78,7 @@ async function boot() {
   $("#userName").textContent = `${user.name} (${roleLabel(user.role)})`;
   uploadSection.hidden = true;
   toggleUploadButton.hidden = !user.permissions.canUpload;
+  optimizeThumbnailsButton.hidden = !user.permissions.canUpload;
   adminSection.hidden = !user.permissions.canManageUsers;
   await loadCategories();
   if (user.permissions.canManageUsers) await loadUsers();
@@ -86,6 +92,7 @@ async function enterApp(user) {
   $("#userName").textContent = `${user.name} (${roleLabel(user.role)})`;
   uploadSection.hidden = true;
   toggleUploadButton.hidden = !user.permissions.canUpload;
+  optimizeThumbnailsButton.hidden = !user.permissions.canUpload;
   adminSection.hidden = !user.permissions.canManageUsers;
   await loadCategories();
   if (user.permissions.canManageUsers) await loadUsers();
@@ -126,9 +133,10 @@ async function loadUsers() {
 function renderVideos() {
   $("#resultSummary").textContent = `${state.videos.length} Video${state.videos.length === 1 ? "" : "s"}`;
   emptyState.hidden = state.videos.length > 0;
-  videoGrid.innerHTML = state.videos.map((video) => `
+  const visibleVideos = state.videos.slice(0, state.visibleLimit);
+  videoGrid.innerHTML = visibleVideos.map((video) => `
     <article class="video-card">
-      ${video.thumbnailUrl ? `<img class="thumb" src="${video.thumbnailUrl}" alt="" width="480" height="270" loading="lazy" decoding="async">` : `<span class="thumb">${escapeHtml(video.category)}</span>`}
+      ${video.thumbnailUrl ? `<img class="thumb" src="${video.thumbnailUrl}" alt="" width="480" height="270" loading="lazy" decoding="async" fetchpriority="low">` : `<span class="thumb">${escapeHtml(video.category)}</span>`}
       <h3>${escapeHtml(video.title)}</h3>
       <p class="meta">
         <span>${escapeHtml(video.category)}</span>
@@ -144,6 +152,7 @@ function renderVideos() {
       </div>
     </article>
   `).join("");
+  loadMoreButton.hidden = state.videos.length <= state.visibleLimit;
 }
 
 function renderUsers() {
@@ -201,6 +210,7 @@ $("#logoutButton").addEventListener("click", async () => {
 $("#searchForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   state.search = $("#searchInput").value.trim();
+  state.visibleLimit = initialVideoLimit;
   await loadVideos();
 });
 
@@ -208,6 +218,7 @@ document.addEventListener("click", async (event) => {
   const categoryButton = event.target.closest(".category");
   if (categoryButton) {
     state.activeCategory = categoryButton.dataset.category || "";
+    state.visibleLimit = initialVideoLimit;
     document.querySelectorAll(".category").forEach((button) => {
       button.classList.toggle("active", button.dataset.category === state.activeCategory);
     });
@@ -264,6 +275,11 @@ document.addEventListener("click", async (event) => {
       userStatus.textContent = error.message;
     }
   }
+});
+
+loadMoreButton.addEventListener("click", () => {
+  state.visibleLimit += initialVideoLimit;
+  renderVideos();
 });
 
 document.addEventListener("change", async (event) => {
@@ -372,6 +388,97 @@ async function refreshVideoThumbnail(video) {
     body: JSON.stringify({ thumbnail })
   });
 }
+
+function dataUrlSize(dataUrl) {
+  const base64 = String(dataUrl).split(",")[1] || "";
+  return Math.floor(base64.length * 3 / 4);
+}
+
+function loadImageBlob(blob) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(blob);
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Vorschaubild konnte nicht gelesen werden."));
+    };
+    image.src = objectUrl;
+  });
+}
+
+async function compressThumbnailBlob(blob) {
+  const image = await loadImageBlob(blob);
+  const canvas = document.createElement("canvas");
+  canvas.width = thumbnailWidth;
+  canvas.height = Math.round(thumbnailWidth * image.naturalHeight / image.naturalWidth);
+  const context = canvas.getContext("2d");
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.68);
+}
+
+async function optimizeExistingThumbnail(video) {
+  const token = localStorage.getItem(tokenKey);
+  const response = await fetch(video.thumbnailUrl, {
+    credentials: "same-origin",
+    headers: token ? { authorization: `Bearer ${token}` } : {}
+  });
+  if (!response.ok) throw new Error("Vorschaubild konnte nicht geladen werden.");
+
+  const blob = await response.blob();
+  const thumbnail = await compressThumbnailBlob(blob);
+  const optimizedSize = dataUrlSize(thumbnail);
+  if (optimizedSize >= blob.size * 0.92) {
+    return { updated: false, originalSize: blob.size, optimizedSize };
+  }
+
+  await api(`/api/videos/${video.id}/thumbnail`, {
+    method: "PATCH",
+    body: JSON.stringify({ thumbnail })
+  });
+  return { updated: true, originalSize: blob.size, optimizedSize };
+}
+
+optimizeThumbnailsButton.addEventListener("click", async () => {
+  const candidates = state.videos.filter((video) => video.thumbnailUrl && video.canRefreshThumbnail);
+  if (!candidates.length) {
+    libraryStatus.textContent = "Keine Vorschaubilder zum Optimieren gefunden.";
+    return;
+  }
+  if (!confirm(`${candidates.length} Vorschaubilder jetzt verkleinern?`)) return;
+
+  optimizeThumbnailsButton.disabled = true;
+  let updated = 0;
+  let skipped = 0;
+  let failed = 0;
+  let savedBytes = 0;
+
+  for (let index = 0; index < candidates.length; index += 1) {
+    const video = candidates[index];
+    libraryStatus.textContent = `Bilder werden optimiert: ${index + 1}/${candidates.length}`;
+    try {
+      const result = await optimizeExistingThumbnail(video);
+      if (result.updated) {
+        updated += 1;
+        savedBytes += Math.max(0, result.originalSize - result.optimizedSize);
+      } else {
+        skipped += 1;
+      }
+    } catch {
+      failed += 1;
+    }
+  }
+
+  optimizeThumbnailsButton.disabled = false;
+  await loadVideos();
+  const savedMb = (savedBytes / (1024 * 1024)).toFixed(1);
+  libraryStatus.textContent = failed
+    ? `${updated} Bilder optimiert, ${skipped} uebersprungen, ${failed} fehlgeschlagen.`
+    : `${updated} Bilder optimiert, ${skipped} uebersprungen, ca. ${savedMb} MB gespart.`;
+});
 
 $("#videoFile").addEventListener("change", async (event) => {
   const file = event.target.files[0];

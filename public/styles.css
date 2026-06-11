@@ -257,7 +257,15 @@ h2 {
   gap: 16px;
 }
 
-.library-head button {
+.library-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: end;
+  flex-wrap: wrap;
+}
+
+.library-actions button {
   min-width: 92px;
 }
 
@@ -374,6 +382,13 @@ h2 {
   color: var(--muted);
   border: 1px dashed var(--line);
   border-radius: 8px;
+}
+
+.load-more {
+  justify-self: center;
+  min-width: 150px;
+  background: var(--surface-2);
+  color: var(--text);
 }
 
 dialog {

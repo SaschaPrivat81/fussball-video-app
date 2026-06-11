@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>U9 Videothek</title>
-    <link rel="stylesheet" href="/styles.css?v=20260611-11">
+    <link rel="stylesheet" href="/styles.css?v=20260611-12">
   </head>
   <body>
     <main id="loginView" class="login-shell" hidden>
@@ -57,10 +57,15 @@
             <div>
               <h2>Videothek</h2>
               <p id="resultSummary" class="muted"></p>
+              <p id="libraryStatus" class="muted"></p>
             </div>
-            <button id="toggleUploadButton" type="button" hidden>Upload</button>
+            <div class="library-actions">
+              <button id="optimizeThumbnailsButton" type="button" hidden>Bilder optimieren</button>
+              <button id="toggleUploadButton" type="button" hidden>Upload</button>
+            </div>
           </section>
           <section id="videoGrid" class="video-grid"></section>
+          <button id="loadMoreButton" class="load-more" type="button" hidden>Mehr anzeigen</button>
           <p id="emptyState" class="empty" hidden>Noch keine Videos vorhanden.</p>
 
           <section id="uploadSection" class="upload-panel" hidden>
@@ -177,6 +182,6 @@
       </dialog>
     </main>
 
-    <script src="/app.js?v=20260611-11" type="module"></script>
+    <script src="/app.js?v=20260611-12" type="module"></script>
   </body>
 </html>

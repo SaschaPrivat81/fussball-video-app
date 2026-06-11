@@ -154,6 +154,7 @@ function internalMediaUri(prefix, filename) {
 function sendAccelRedirect(res, internalUri, headers) {
   res.writeHead(200, {
     ...headers,
+    "x-teamclips-media-mode": "accel-request",
     "x-accel-redirect": internalUri
   });
   res.end();
@@ -172,6 +173,7 @@ function streamFile(req, res, filePath, mimeType, cacheSeconds) {
       "content-type": mimeType,
       "etag": etagFor(stat),
       "last-modified": stat.mtime.toUTCString(),
+      "x-teamclips-media-mode": "node",
       ...privateCacheHeaders(cacheSeconds)
     };
 
