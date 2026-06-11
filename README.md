@@ -16,7 +16,13 @@ http://127.0.0.1:3001
 
 ## Deployment
 
-Fuer den NUC gibt es ein vorbereitetes Docker-Setup:
+Fuer den Windows-NUC mit deinem bestehenden nginx/PM2-Setup gibt es:
+
+- `DEPLOY_WINDOWS_NUC_NGINX.md`
+- `ecosystem.config.cjs`
+- `nginx-teamclips.conf`
+
+Zusätzlich gibt es ein Docker-Setup, falls du spaeter Container nutzen willst:
 
 - `Dockerfile`
 - `docker-compose.yml`
