@@ -9,6 +9,7 @@ const state = {
 
 const $ = (selector) => document.querySelector(selector);
 const tokenKey = "u9SessionToken";
+const thumbnailWidth = 480;
 
 const loginView = $("#loginView");
 const appView = $("#appView");
@@ -127,7 +128,7 @@ function renderVideos() {
   emptyState.hidden = state.videos.length > 0;
   videoGrid.innerHTML = state.videos.map((video) => `
     <article class="video-card">
-      ${video.thumbnailUrl ? `<img class="thumb" src="${video.thumbnailUrl}" alt="">` : `<span class="thumb">${escapeHtml(video.category)}</span>`}
+      ${video.thumbnailUrl ? `<img class="thumb" src="${video.thumbnailUrl}" alt="" width="480" height="270" loading="lazy" decoding="async">` : `<span class="thumb">${escapeHtml(video.category)}</span>`}
       <h3>${escapeHtml(video.title)}</h3>
       <p class="meta">
         <span>${escapeHtml(video.category)}</span>
@@ -331,11 +332,11 @@ async function captureThumbnail(file) {
       await new Promise((resolve) => requestAnimationFrame(resolve));
 
       const canvas = document.createElement("canvas");
-      canvas.width = 640;
-      canvas.height = Math.round(640 * (video.videoHeight || 9) / (video.videoWidth || 16));
+      canvas.width = thumbnailWidth;
+      canvas.height = Math.round(thumbnailWidth * (video.videoHeight || 9) / (video.videoWidth || 16));
       const context = canvas.getContext("2d", { willReadFrequently: true });
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.84);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
       fallback = fallback || dataUrl;
 
       const score = frameScore(context, canvas.width, canvas.height);

@@ -13,6 +13,11 @@ const videoDir = path.join(storageDir, "videos");
 const thumbnailDir = path.join(storageDir, "thumbnails");
 const sessions = new Map();
 const maxUploadBytes = Number(process.env.MAX_UPLOAD_MB || 800) * 1024 * 1024;
+const mediaAccelEnabled = /^(1|true|yes)$/i.test(process.env.MEDIA_ACCEL_ENABLED || "");
+const mediaAccelVideoPrefix = stripTrailingSlash(process.env.MEDIA_ACCEL_VIDEO_PREFIX || "/_protected_media/videos");
+const mediaAccelThumbnailPrefix = stripTrailingSlash(process.env.MEDIA_ACCEL_THUMBNAIL_PREFIX || "/_protected_media/thumbnails");
+const thumbnailCacheSeconds = Number(process.env.THUMBNAIL_CACHE_SECONDS || 86400);
+const videoCacheSeconds = Number(process.env.VIDEO_CACHE_SECONDS || 3600);
 
 await fs.mkdir(dataDir, { recursive: true });
 await fs.mkdir(videoDir, { recursive: true });
@@ -26,6 +31,10 @@ const roles = {
 
 function jsonPath(name) {
   return path.join(dataDir, `${name}.json`);
+}
+
+function stripTrailingSlash(value) {
+  return String(value || "").replace(/\/+$/, "");
 }
 
 async function ensureJson(name, fallback) {
@@ -85,6 +94,118 @@ function send(res, status, body, headers = {}) {
 
 function sendJson(res, status, payload, headers = {}) {
   send(res, status, JSON.stringify(payload), { "content-type": "application/json; charset=utf-8", ...headers });
+}
+
+function privateCacheHeaders(seconds) {
+  return {
+    "cache-control": `private, max-age=${seconds}, no-transform`,
+    "vary": "Cookie, Authorization"
+  };
+}
+
+function etagFor(stat) {
+  return `"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`;
+}
+
+function isFresh(req, etag, stat) {
+  const ifNoneMatch = req.headers["if-none-match"];
+  if (ifNoneMatch && ifNoneMatch.split(",").map((value) => value.trim()).includes(etag)) return true;
+
+  const ifModifiedSince = req.headers["if-modified-since"];
+  if (!ifModifiedSince) return false;
+  const since = Date.parse(ifModifiedSince);
+  return Number.isFinite(since) && Math.floor(stat.mtimeMs / 1000) <= Math.floor(since / 1000);
+}
+
+function parseByteRange(value, size) {
+  if (!value || !value.startsWith("bytes=")) return null;
+  const ranges = value.slice(6).split(",");
+  if (ranges.length !== 1) return { invalid: true };
+
+  const [startText, endText] = ranges[0].trim().split("-");
+  let start;
+  let end;
+
+  if (startText === "") {
+    const suffixLength = Number(endText);
+    if (!Number.isInteger(suffixLength) || suffixLength <= 0) return { invalid: true };
+    start = Math.max(size - suffixLength, 0);
+    end = size - 1;
+  } else {
+    start = Number(startText);
+    end = endText ? Number(endText) : size - 1;
+  }
+
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start || start >= size) {
+    return { invalid: true };
+  }
+
+  return { start, end: Math.min(end, size - 1) };
+}
+
+function shouldUseAccel(req) {
+  return mediaAccelEnabled && Boolean(req.headers["x-forwarded-proto"]);
+}
+
+function internalMediaUri(prefix, filename) {
+  return `${prefix}/${encodeURIComponent(path.basename(filename))}`;
+}
+
+function sendAccelRedirect(res, internalUri, headers) {
+  res.writeHead(200, {
+    ...headers,
+    "x-accel-redirect": internalUri
+  });
+  res.end();
+}
+
+function sendNotModified(res, headers) {
+  const { "content-length": _contentLength, "content-type": _contentType, ...notModifiedHeaders } = headers;
+  res.writeHead(304, notModifiedHeaders);
+  res.end();
+}
+
+function streamFile(req, res, filePath, mimeType, cacheSeconds) {
+  return fs.stat(filePath).then((stat) => {
+    const headers = {
+      "accept-ranges": "bytes",
+      "content-type": mimeType,
+      "etag": etagFor(stat),
+      "last-modified": stat.mtime.toUTCString(),
+      ...privateCacheHeaders(cacheSeconds)
+    };
+
+    if (!req.headers.range && isFresh(req, headers.etag, stat)) {
+      sendNotModified(res, headers);
+      return;
+    }
+
+    const range = parseByteRange(req.headers.range, stat.size);
+    if (range?.invalid) {
+      res.writeHead(416, {
+        "content-range": `bytes */${stat.size}`,
+        ...headers
+      });
+      res.end();
+      return;
+    }
+
+    if (range) {
+      const partialHeaders = {
+        ...headers,
+        "content-range": `bytes ${range.start}-${range.end}/${stat.size}`,
+        "content-length": range.end - range.start + 1
+      };
+      res.writeHead(206, partialHeaders);
+      if (req.method === "HEAD") return res.end();
+      createReadStream(filePath, { start: range.start, end: range.end }).pipe(res);
+      return;
+    }
+
+    res.writeHead(200, { ...headers, "content-length": stat.size });
+    if (req.method === "HEAD") return res.end();
+    createReadStream(filePath).pipe(res);
+  });
 }
 
 function parseCookies(req) {
@@ -447,44 +568,45 @@ async function handleApi(req, res) {
   }
 
   const thumbnailMatch = url.pathname.match(/^\/api\/videos\/([^/]+)\/thumbnail$/);
-  if (thumbnailMatch && req.method === "GET") {
+  if (thumbnailMatch && (req.method === "GET" || req.method === "HEAD")) {
     const videos = await readJson("videos");
     const video = videos.find((entry) => entry.id === thumbnailMatch[1]);
     if (!video || !video.thumbnailName || !formatVideo(video, user)) return send(res, 404, "Not found");
     const filePath = path.join(thumbnailDir, video.thumbnailName);
     const stat = await fs.stat(filePath);
-    res.writeHead(200, {
-      "content-length": stat.size,
+    const headers = {
       "content-type": video.thumbnailMimeType || "image/jpeg",
-      "cache-control": "private, max-age=3600"
-    });
-    createReadStream(filePath).pipe(res);
+      "etag": etagFor(stat),
+      "last-modified": stat.mtime.toUTCString(),
+      ...privateCacheHeaders(thumbnailCacheSeconds)
+    };
+    if (isFresh(req, headers.etag, stat)) return sendNotModified(res, headers);
+    if (shouldUseAccel(req)) {
+      return sendAccelRedirect(res, internalMediaUri(mediaAccelThumbnailPrefix, video.thumbnailName), headers);
+    }
+    await streamFile(req, res, filePath, video.thumbnailMimeType || "image/jpeg", thumbnailCacheSeconds);
     return;
   }
 
   const videoMatch = url.pathname.match(/^\/api\/videos\/([^/]+)\/stream$/);
-  if (videoMatch && req.method === "GET") {
+  if (videoMatch && (req.method === "GET" || req.method === "HEAD")) {
     const videos = await readJson("videos");
     const video = videos.find((entry) => entry.id === videoMatch[1]);
     if (!video || !formatVideo(video, user)) return send(res, 404, "Not found");
     const filePath = path.join(videoDir, video.storedName);
     const stat = await fs.stat(filePath);
-    const range = req.headers.range;
-    if (range) {
-      const [startText, endText] = range.replace(/bytes=/, "").split("-");
-      const start = Number(startText);
-      const end = endText ? Number(endText) : stat.size - 1;
-      res.writeHead(206, {
-        "content-range": `bytes ${start}-${end}/${stat.size}`,
-        "accept-ranges": "bytes",
-        "content-length": end - start + 1,
-        "content-type": video.mimeType
-      });
-      createReadStream(filePath, { start, end }).pipe(res);
-    } else {
-      res.writeHead(200, { "content-length": stat.size, "content-type": video.mimeType });
-      createReadStream(filePath).pipe(res);
+    const headers = {
+      "accept-ranges": "bytes",
+      "content-type": video.mimeType,
+      "etag": etagFor(stat),
+      "last-modified": stat.mtime.toUTCString(),
+      ...privateCacheHeaders(videoCacheSeconds)
+    };
+    if (!req.headers.range && isFresh(req, headers.etag, stat)) return sendNotModified(res, headers);
+    if (shouldUseAccel(req)) {
+      return sendAccelRedirect(res, internalMediaUri(mediaAccelVideoPrefix, video.storedName), headers);
     }
+    await streamFile(req, res, filePath, video.mimeType, videoCacheSeconds);
     return;
   }
 
