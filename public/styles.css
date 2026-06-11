@@ -323,13 +323,20 @@ h2 {
 
 .user-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 160px;
+  grid-template-columns: minmax(180px, 1fr) 160px minmax(220px, 300px);
   gap: 12px;
   align-items: center;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfd;
+}
+
+.password-reset {
+  display: grid;
+  grid-template-columns: 1fr 34px;
+  gap: 8px;
+  align-items: center;
 }
 
 .thumb {

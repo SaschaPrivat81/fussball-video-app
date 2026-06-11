@@ -157,6 +157,10 @@ function renderUsers() {
         <option value="trainer" ${user.role === "trainer" ? "selected" : ""}>Trainer</option>
         <option value="admin" ${user.role === "admin" ? "selected" : ""}>Admin</option>
       </select>
+      <div class="password-reset">
+        <input class="password-input" data-id="${user.id}" type="password" minlength="6" placeholder="Neues Passwort" aria-label="Neues Passwort fuer ${escapeHtml(user.name)}">
+        <button class="icon-button set-password" type="button" data-id="${user.id}" title="Passwort setzen" aria-label="Passwort setzen">⚿</button>
+      </div>
     </article>
   `).join("");
 }
@@ -236,6 +240,27 @@ document.addEventListener("click", async (event) => {
       alert(error.message);
       refreshButton.disabled = false;
       refreshButton.textContent = "↻";
+    }
+  }
+
+  const passwordButton = event.target.closest(".set-password");
+  if (passwordButton) {
+    const input = document.querySelector(`.password-input[data-id="${passwordButton.dataset.id}"]`);
+    const password = input?.value || "";
+    if (password.length < 6) {
+      userStatus.textContent = "Das neue Passwort braucht mindestens 6 Zeichen.";
+      return;
+    }
+    userStatus.textContent = "Passwort wird gesetzt ...";
+    try {
+      await api(`/api/users/${passwordButton.dataset.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ password })
+      });
+      input.value = "";
+      userStatus.textContent = "Passwort gesetzt.";
+    } catch (error) {
+      userStatus.textContent = error.message;
     }
   }
 });

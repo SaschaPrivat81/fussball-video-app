@@ -328,10 +328,15 @@ async function handleApi(req, res) {
     if (users[index].role === "admin" && nextRole !== "admin" && adminCount < 2) {
       return sendJson(res, 400, { error: "Der letzte Admin kann nicht heruntergestuft werden." });
     }
+    const nextPassword = typeof body.password === "string" ? body.password : "";
+    if (nextPassword && nextPassword.length < 6) {
+      return sendJson(res, 400, { error: "Das neue Passwort braucht mindestens 6 Zeichen." });
+    }
     users[index] = {
       ...users[index],
       name: cleanText(body.name || users[index].name).slice(0, 120),
-      role: nextRole
+      role: nextRole,
+      ...(nextPassword ? { passwordHash: hashPassword(nextPassword) } : {})
     };
     await writeJson("users", users);
     return sendJson(res, 200, { user: publicUser(users[index]) });
