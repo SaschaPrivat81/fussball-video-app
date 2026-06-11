@@ -28,6 +28,48 @@ function jsonPath(name) {
   return path.join(dataDir, `${name}.json`);
 }
 
+async function ensureJson(name, fallback) {
+  try {
+    await fs.access(jsonPath(name));
+  } catch {
+    await fs.writeFile(jsonPath(name), JSON.stringify(fallback, null, 2));
+  }
+}
+
+await ensureJson("categories", [
+  "Trainingsspiel",
+  "Überzahlspiel",
+  "Passtraining",
+  "Schusstraining",
+  "Sonstiges"
+]);
+
+await ensureJson("videos", []);
+
+await ensureJson("users", [
+  {
+    id: "u_admin",
+    name: "Admin",
+    email: "admin@u9.local",
+    role: "admin",
+    passwordHash: "c2fb788c7deedbeaa296e424d4c2921b871a4f6cb4cf393c1c1105653ab399b4"
+  },
+  {
+    id: "u_trainer",
+    name: "Trainer",
+    email: "trainer@u9.local",
+    role: "trainer",
+    passwordHash: "c2fb788c7deedbeaa296e424d4c2921b871a4f6cb4cf393c1c1105653ab399b4"
+  },
+  {
+    id: "u_eltern",
+    name: "Eltern",
+    email: "eltern@u9.local",
+    role: "parent",
+    passwordHash: "c2fb788c7deedbeaa296e424d4c2921b871a4f6cb4cf393c1c1105653ab399b4"
+  }
+]);
+
 async function readJson(name) {
   return JSON.parse(await fs.readFile(jsonPath(name), "utf8"));
 }

@@ -33,10 +33,41 @@ WAF: dieselbe Deutschland-only-Regel wie bei den anderen Seiten auf `teamclips.d
 Empfohlener Pfad:
 
 ```powershell
+New-Item -ItemType Directory -Force C:\sites
+```
+
+Wenn `git` auf dem NUC installiert ist:
+
+```powershell
 cd C:\sites
 git clone https://github.com/SaschaPrivat81/fussball-video-app.git teamclips
 cd C:\sites\teamclips
 ```
+
+Wenn `git` nicht installiert ist:
+
+1. GitHub im Browser oeffnen.
+2. `Code` -> `Download ZIP`.
+3. ZIP entpacken.
+4. Den Inhalt so verschieben, dass diese Dateien direkt hier liegen:
+
+```text
+C:\sites\teamclips\server.js
+C:\sites\teamclips\package.json
+C:\sites\teamclips\ecosystem.config.cjs
+C:\sites\teamclips\nginx-teamclips.conf
+```
+
+Pruefen:
+
+```powershell
+Test-Path C:\sites\teamclips\server.js
+Test-Path C:\sites\teamclips\package.json
+Test-Path C:\sites\teamclips\ecosystem.config.cjs
+Test-Path C:\sites\teamclips\nginx-teamclips.conf
+```
+
+Alle vier Befehle sollten `True` ausgeben.
 
 Die Ordner bleiben lokal auf dem NUC und werden nicht nach GitHub gepusht:
 
@@ -45,6 +76,8 @@ C:\sites\teamclips\data
 C:\sites\teamclips\storage
 ```
 
+Die App legt fehlende Startdateien unter `data\` beim ersten Start selbst an.
+
 Wenn du die bisherigen Videos vom Mac mitnehmen willst, kopiere genau diese beiden Ordner vom Mac auf den NUC.
 
 ## 3. PM2 starten
@@ -52,6 +85,7 @@ Wenn du die bisherigen Videos vom Mac mitnehmen willst, kopiere genau diese beid
 Im Projektordner:
 
 ```powershell
+cd C:\sites\teamclips
 pm2 start ecosystem.config.cjs
 pm2 save
 pm2 status
