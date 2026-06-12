@@ -2,7 +2,7 @@
 
 Dieses Deployment passt zu deinem bestehenden Setup:
 
-- Cloudflare fuer DNS, Proxy und Deutschland-only-Regel
+- Cloudflare fuer DNS
 - FRITZ!Box leitet 80/443 auf den NUC
 - nginx auf dem NUC verteilt Domains
 - PM2 startet Node-Apps
@@ -20,13 +20,11 @@ teamclips.de        -> 127.0.0.1:5300
 Bei Cloudflare fuer `teamclips.de`:
 
 ```text
-A     teamclips.de      -> deine oeffentliche Heim-IP    Proxied/orange
-CNAME www               -> teamclips.de                  Proxied/orange
+A     teamclips.de      -> deine oeffentliche Heim-IP    DNS only/grau
+CNAME www               -> teamclips.de                  DNS only/grau
 ```
 
-SSL/TLS-Modus: `Full (strict)`, sobald das Origin-Zertifikat in nginx liegt.
-
-WAF: dieselbe Deutschland-only-Regel wie bei den anderen Seiten auf `teamclips.de` erweitern.
+Weil DNS-only direkt auf den NUC zeigt, braucht nginx ein normales oeffentliches Zertifikat, z. B. von Let's Encrypt.
 
 ## 2. Code auf dem NUC
 
@@ -44,7 +42,28 @@ git clone https://github.com/SaschaPrivat81/fussball-video-app.git teamclips
 cd C:\sites\teamclips
 ```
 
-Wenn `git` nicht installiert ist:
+Wenn `git` nicht installiert ist, einmalig Git for Windows installieren. Danach muss nicht mehr per ZIP aktualisiert werden.
+
+Wenn die App bisher als ZIP unter `C:\sites\teamclips` liegt, einmalig so auf Git umstellen:
+
+```powershell
+pm2 stop teamclips
+
+$stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+Rename-Item C:\sites\teamclips "teamclips-backup-$stamp"
+
+cd C:\sites
+git clone https://github.com/SaschaPrivat81/fussball-video-app.git teamclips
+
+Copy-Item "C:\sites\teamclips-backup-$stamp\data" C:\sites\teamclips\data -Recurse
+Copy-Item "C:\sites\teamclips-backup-$stamp\storage" C:\sites\teamclips\storage -Recurse
+
+cd C:\sites\teamclips
+pm2 startOrReload ecosystem.config.cjs --only teamclips --update-env
+pm2 save
+```
+
+Wenn `git` nicht genutzt wird:
 
 1. GitHub im Browser oeffnen.
 2. `Code` -> `Download ZIP`.
@@ -101,8 +120,14 @@ Restart nach Updates:
 
 ```powershell
 cd C:\sites\teamclips
-git pull
-pm2 restart teamclips
+.\update-teamclips.ps1
+```
+
+Wenn sich auch nginx-Konfigurationen geaendert haben:
+
+```powershell
+cd C:\sites\teamclips
+.\update-teamclips.ps1 -ReloadNginx
 ```
 
 ## 4. nginx eintragen
@@ -123,31 +148,25 @@ Set-Location C:\nginx-1.29.6
 .\nginx.exe -s reload
 ```
 
-## 5. Cloudflare-Origin-Zertifikat
+## 5. Let's-Encrypt-Zertifikat
 
-Wie bei Wordwick:
+Fuer DNS-only muss nginx ein Browser-vertrauenswuerdiges Zertifikat nutzen.
 
-1. Cloudflare -> `teamclips.de` -> SSL/TLS -> Origin Server
-2. Origin Certificate erstellen fuer:
-
-```text
-teamclips.de
-*.teamclips.de
-```
-
-3. Zertifikat speichern als:
+Mit win-acme wurde fuer `teamclips.de` und `www.teamclips.de` ein PEM-Zertifikat erzeugt:
 
 ```text
-C:\nginx-1.29.6\ssl\teamclips.de.pem
+C:\nginx-1.29.6\ssl\teamclips.de-chain.pem
+C:\nginx-1.29.6\ssl\teamclips.de-key.pem
 ```
 
-4. Private Key speichern als:
+Der HTTPS-Block in nginx nutzt:
 
-```text
-C:\nginx-1.29.6\ssl\teamclips.de.key
+```nginx
+ssl_certificate     C:/nginx-1.29.6/ssl/teamclips.de-chain.pem;
+ssl_certificate_key C:/nginx-1.29.6/ssl/teamclips.de-key.pem;
 ```
 
-Private Key niemals nach GitHub kopieren.
+Private Keys niemals nach GitHub kopieren.
 
 ## 6. Test
 
