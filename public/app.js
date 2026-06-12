@@ -160,7 +160,7 @@ function renderUsers() {
     <article class="user-row">
       <div>
         <strong>${escapeHtml(user.name)}</strong>
-        <p class="muted">${escapeHtml(user.email)}</p>
+        <p class="muted">${escapeHtml(user.username)}</p>
       </div>
       <select class="role-select" data-id="${user.id}" aria-label="Rolle fuer ${escapeHtml(user.name)}">
         <option value="parent" ${user.role === "parent" ? "selected" : ""}>Eltern</option>
@@ -171,6 +171,7 @@ function renderUsers() {
         <input class="password-input" data-id="${user.id}" type="password" minlength="6" placeholder="Neues Passwort" aria-label="Neues Passwort fuer ${escapeHtml(user.name)}">
         <button class="icon-button set-password" type="button" data-id="${user.id}" title="Passwort setzen" aria-label="Passwort setzen">⚿</button>
       </div>
+      ${user.id !== state.user?.id ? `<button class="icon-button danger delete-user" type="button" data-id="${user.id}" title="Benutzer loeschen" aria-label="Benutzer loeschen">×</button>` : "<span></span>"}
     </article>
   `).join("");
 }
@@ -271,6 +272,20 @@ document.addEventListener("click", async (event) => {
       });
       input.value = "";
       userStatus.textContent = "Passwort gesetzt.";
+    } catch (error) {
+      userStatus.textContent = error.message;
+    }
+  }
+
+  const deleteUserButton = event.target.closest(".delete-user");
+  if (deleteUserButton) {
+    const targetUser = state.users.find((entry) => entry.id === deleteUserButton.dataset.id);
+    if (!targetUser || !confirm(`Benutzer "${targetUser.name}" wirklich loeschen?`)) return;
+    userStatus.textContent = "Benutzer wird geloescht ...";
+    try {
+      await api(`/api/users/${targetUser.id}`, { method: "DELETE", body: "{}" });
+      userStatus.textContent = "Benutzer geloescht.";
+      await loadUsers();
     } catch (error) {
       userStatus.textContent = error.message;
     }

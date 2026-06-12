@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>U9 Videothek</title>
-    <link rel="stylesheet" href="/styles.css?v=20260611-12">
+    <link rel="stylesheet" href="/styles.css?v=20260612-1">
   </head>
   <body>
     <main id="loginView" class="login-shell" hidden>
@@ -16,17 +16,16 @@
         </div>
         <form id="loginForm" class="stack">
           <label>
-            E-Mail
-            <input name="email" type="email" value="trainer@u9.local" autocomplete="email" required>
+            Benutzername
+            <input name="username" autocomplete="username" required>
           </label>
           <label>
             Passwort
-            <input name="password" type="password" value="training" autocomplete="current-password" required>
+            <input name="password" type="password" autocomplete="current-password" required>
           </label>
           <button type="submit">Anmelden</button>
           <p id="loginError" class="error" role="alert"></p>
         </form>
-        <p class="demo-note">Demo-Konten: admin@u9.local, trainer@u9.local, eltern@u9.local / Passwort: training</p>
       </section>
     </main>
 
@@ -112,8 +111,8 @@
                 <input name="name" required maxlength="120" placeholder="Name">
               </label>
               <label>
-                E-Mail
-                <input name="email" type="email" required placeholder="name@example.de">
+                Benutzername
+                <input name="username" required minlength="3" maxlength="40" placeholder="z. B. familie-mueller" autocomplete="off">
               </label>
               <label>
                 Rolle
@@ -182,6 +181,6 @@
       </dialog>
     </main>
 
-    <script src="/app.js?v=20260611-12" type="module"></script>
+    <script src="/app.js?v=20260612-1" type="module"></script>
   </body>
 </html>

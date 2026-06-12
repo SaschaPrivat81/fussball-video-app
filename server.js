@@ -59,6 +59,7 @@ await ensureJson("users", [
   {
     id: "u_admin",
     name: "Admin",
+    username: "admin",
     email: "admin@u9.local",
     role: "admin",
     passwordHash: "c2fb788c7deedbeaa296e424d4c2921b871a4f6cb4cf393c1c1105653ab399b4"
@@ -66,6 +67,7 @@ await ensureJson("users", [
   {
     id: "u_trainer",
     name: "Trainer",
+    username: "trainer",
     email: "trainer@u9.local",
     role: "trainer",
     passwordHash: "c2fb788c7deedbeaa296e424d4c2921b871a4f6cb4cf393c1c1105653ab399b4"
@@ -73,11 +75,14 @@ await ensureJson("users", [
   {
     id: "u_eltern",
     name: "Eltern",
+    username: "eltern",
     email: "eltern@u9.local",
     role: "parent",
     passwordHash: "c2fb788c7deedbeaa296e424d4c2921b871a4f6cb4cf393c1c1105653ab399b4"
   }
 ]);
+
+await ensureUsernames();
 
 async function readJson(name) {
   return JSON.parse(await fs.readFile(jsonPath(name), "utf8"));
@@ -85,6 +90,64 @@ async function readJson(name) {
 
 async function writeJson(name, value) {
   await fs.writeFile(jsonPath(name), JSON.stringify(value, null, 2));
+}
+
+function normalizeUsername(value) {
+  return String(value || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+}
+
+function usernameBaseFor(user) {
+  return normalizeUsername(user.username || String(user.email || "").split("@")[0] || user.name || "user") || "user";
+}
+
+function uniqueUsername(base, users, currentId = "") {
+  const cleanBase = normalizeUsername(base) || "user";
+  let candidate = cleanBase;
+  let suffix = 2;
+  while (users.some((entry) => entry.id !== currentId && normalizeUsername(entry.username) === candidate)) {
+    candidate = `${cleanBase}-${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
+}
+
+function uniqueUsernameFromSet(base, claimed) {
+  const cleanBase = normalizeUsername(base) || "user";
+  let candidate = cleanBase;
+  let suffix = 2;
+  while (claimed.has(candidate)) {
+    candidate = `${cleanBase}-${suffix}`;
+    suffix += 1;
+  }
+  claimed.add(candidate);
+  return candidate;
+}
+
+async function ensureUsernames() {
+  const users = await readJson("users");
+  let changed = false;
+  const claimed = new Set(users.map((user) => normalizeUsername(user.username)).filter(Boolean));
+  const emitted = new Set();
+  const nextUsers = users.map((user) => {
+    const existingUsername = normalizeUsername(user.username);
+    if (existingUsername && !emitted.has(existingUsername)) {
+      emitted.add(existingUsername);
+      if (user.username === existingUsername) return user;
+      changed = true;
+      return { ...user, username: existingUsername };
+    }
+    const username = uniqueUsernameFromSet(usernameBaseFor(user), claimed);
+    emitted.add(username);
+    changed = true;
+    return { ...user, username };
+  });
+  if (changed) await writeJson("users", nextUsers);
 }
 
 function send(res, status, body, headers = {}) {
@@ -259,6 +322,11 @@ function readBody(req) {
   });
 }
 
+async function readJsonBody(req) {
+  const text = (await readBody(req)).toString("utf8").replace(/^\uFEFF/, "").trim();
+  return text ? JSON.parse(text) : {};
+}
+
 function parseMultipart(buffer, contentType) {
   const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
   if (!boundaryMatch) throw new Error("Missing multipart boundary");
@@ -375,11 +443,13 @@ async function handleApi(req, res) {
   const url = new URL(req.url, "http://localhost");
 
   if (url.pathname === "/api/login" && req.method === "POST") {
-    const body = JSON.parse((await readBody(req)).toString("utf8") || "{}");
+    const body = await readJsonBody(req);
     const users = await readJson("users");
-    const user = users.find((entry) => entry.email.toLowerCase() === String(body.email || "").toLowerCase());
+    const loginName = normalizeUsername(body.username || body.email);
+    const loginEmail = String(body.username || body.email || "").toLowerCase();
+    const user = users.find((entry) => normalizeUsername(entry.username) === loginName || String(entry.email || "").toLowerCase() === loginEmail);
     if (!user || user.passwordHash !== hashPassword(String(body.password || ""))) {
-      return sendJson(res, 401, { error: "E-Mail oder Passwort stimmt nicht." });
+      return sendJson(res, 401, { error: "Benutzername oder Passwort stimmt nicht." });
     }
     const sid = crypto.randomBytes(24).toString("hex");
     sessions.set(sid, { userId: user.id, createdAt: new Date().toISOString() });
@@ -414,22 +484,23 @@ async function handleApi(req, res) {
 
   if (url.pathname === "/api/users" && req.method === "POST") {
     if (!roles[user.role]?.canManageUsers) return sendJson(res, 403, { error: "Keine Berechtigung fuer Benutzerverwaltung." });
-    const body = JSON.parse((await readBody(req)).toString("utf8") || "{}");
+    const body = await readJsonBody(req);
     const name = cleanText(body.name).slice(0, 120);
-    const email = cleanText(body.email).toLowerCase();
+    const username = normalizeUsername(body.username);
     const role = cleanText(body.role);
     const password = String(body.password || "");
-    if (!name || !email.includes("@") || !isValidRole(role) || password.length < 6) {
-      return sendJson(res, 400, { error: "Name, gueltige E-Mail, Rolle und Passwort ab 6 Zeichen sind erforderlich." });
+    if (!name || username.length < 3 || !isValidRole(role) || password.length < 6) {
+      return sendJson(res, 400, { error: "Name, Benutzername ab 3 Zeichen, Rolle und Passwort ab 6 Zeichen sind erforderlich." });
     }
     const users = await readJson("users");
-    if (users.some((entry) => entry.email.toLowerCase() === email)) {
-      return sendJson(res, 409, { error: "Diese E-Mail ist bereits angelegt." });
+    if (users.some((entry) => normalizeUsername(entry.username) === username)) {
+      return sendJson(res, 409, { error: "Dieser Benutzername ist bereits vergeben." });
     }
     const newUser = {
       id: crypto.randomUUID(),
       name,
-      email,
+      username,
+      email: "",
       role,
       passwordHash: hashPassword(password)
     };
@@ -441,7 +512,7 @@ async function handleApi(req, res) {
   const userMatch = url.pathname.match(/^\/api\/users\/([^/]+)$/);
   if (userMatch && req.method === "PATCH") {
     if (!roles[user.role]?.canManageUsers) return sendJson(res, 403, { error: "Keine Berechtigung fuer Benutzerverwaltung." });
-    const body = JSON.parse((await readBody(req)).toString("utf8") || "{}");
+    const body = await readJsonBody(req);
     const users = await readJson("users");
     const index = users.findIndex((entry) => entry.id === userMatch[1]);
     if (index === -1) return sendJson(res, 404, { error: "Benutzer nicht gefunden." });
@@ -463,6 +534,20 @@ async function handleApi(req, res) {
     };
     await writeJson("users", users);
     return sendJson(res, 200, { user: publicUser(users[index]) });
+  }
+
+  if (userMatch && req.method === "DELETE") {
+    if (!roles[user.role]?.canManageUsers) return sendJson(res, 403, { error: "Keine Berechtigung fuer Benutzerverwaltung." });
+    const users = await readJson("users");
+    const target = users.find((entry) => entry.id === userMatch[1]);
+    if (!target) return sendJson(res, 404, { error: "Benutzer nicht gefunden." });
+    if (target.id === user.id) return sendJson(res, 400, { error: "Du kannst deinen eigenen Benutzer nicht loeschen." });
+    const adminCount = users.filter((entry) => entry.role === "admin").length;
+    if (target.role === "admin" && adminCount < 2) {
+      return sendJson(res, 400, { error: "Der letzte Admin kann nicht geloescht werden." });
+    }
+    await writeJson("users", users.filter((entry) => entry.id !== target.id));
+    return sendJson(res, 200, { ok: true });
   }
 
   if (url.pathname === "/api/videos" && req.method === "GET") {
@@ -524,7 +609,7 @@ async function handleApi(req, res) {
   const deleteVideoMatch = url.pathname.match(/^\/api\/videos\/([^/]+)$/);
   if (deleteVideoMatch && req.method === "PATCH") {
     if (!roles[user.role]?.canEditVideos) return sendJson(res, 403, { error: "Keine Berechtigung zum Bearbeiten." });
-    const body = JSON.parse((await readBody(req)).toString("utf8") || "{}");
+    const body = await readJsonBody(req);
     const videos = await readJson("videos");
     const categories = await readJson("categories");
     const index = videos.findIndex((entry) => entry.id === deleteVideoMatch[1]);
@@ -558,7 +643,7 @@ async function handleApi(req, res) {
   const updateThumbnailMatch = url.pathname.match(/^\/api\/videos\/([^/]+)\/thumbnail$/);
   if (updateThumbnailMatch && req.method === "PATCH") {
     if (!roles[user.role]?.canUpload) return sendJson(res, 403, { error: "Keine Berechtigung fuer Vorschaubilder." });
-    const body = JSON.parse((await readBody(req)).toString("utf8") || "{}");
+    const body = await readJsonBody(req);
     const thumbnail = decodeDataUrlImage(body.thumbnail);
     if (!thumbnail) return sendJson(res, 400, { error: "Kein gueltiges Vorschaubild erhalten." });
     const videos = await readJson("videos");
@@ -619,7 +704,8 @@ function publicUser(user) {
   return {
     id: user.id,
     name: user.name,
-    email: user.email,
+    username: user.username || usernameBaseFor(user),
+    email: user.email || "",
     role: user.role,
     permissions: roles[user.role] || {}
   };
@@ -632,6 +718,9 @@ const server = http.createServer(async (req, res) => {
   } catch (error) {
     if (error.message === "UPLOAD_TOO_LARGE") {
       return sendJson(res, 413, { error: "Upload ist zu gross." });
+    }
+    if (error instanceof SyntaxError) {
+      return sendJson(res, 400, { error: "Ungueltiges JSON." });
     }
     console.error(error);
     sendJson(res, 500, { error: "Serverfehler" });
